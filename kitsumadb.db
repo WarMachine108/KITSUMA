@@ -1,0 +1,40 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- USERS table
+CREATE TABLE users (
+    login VARCHAR(100) PRIMARY KEY,
+    password TEXT NOT NULL
+);
+
+-- PERSONALIZED FILES (1 user → many files version)
+CREATE TABLE personalized_files (
+    file_id SERIAL PRIMARY KEY,
+    user_login VARCHAR(100) NOT NULL,
+    file_content TEXT NOT NULL,
+    
+    CONSTRAINT fk_user
+        FOREIGN KEY (user_login)
+        REFERENCES users(login)
+        ON DELETE CASCADE
+);
+
+CREATE OR REPLACE FUNCTION hash_password()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.password := crypt(NEW.password, gen_salt('bf'));
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER encrypt_password_trigger
+BEFORE INSERT ON users
+FOR EACH ROW
+EXECUTE FUNCTION hash_password();
+
+-- FILE TABLE
+create table file(
+    fileno SERIAL PRIMARY KEY,
+    filename TEXT NOT NULL,
+    file_content TEXT
+);
+

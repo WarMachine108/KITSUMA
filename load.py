@@ -1,20 +1,27 @@
-#include<libpq-fe.h>
-#include<iostream>
-using namespace std;
-int main() {
+import psycopg2
 
-    const char* conninfo = 
-        "host=localhost port=5432 dbname=your_db user=your_user password=your_password";
+try:
+    conn = psycopg2.connect(
+        host="localhost",
+        port="5432",
+        database="kitsumadb",
+        user="postgres",
+        password="Tanmay10"
+    )
 
-    // Create connection
-    PGconn* conn = PQconnectdb(conninfo);
+    print("Connected successfully!")
 
-    // Check connection status
-    if (PQstatus(conn) != CONNECTION_OK) {
-        std::cerr << "Connection failed: " 
-                  << PQerrorMessage(conn) << std::endl;
-        PQfinish(conn);
-        return 1;
-    }
+    cur = conn.cursor()
 
-    std::cout << "Connected successfully!" << std::endl;
+    cur.execute("SELECT login FROM users;")
+
+    rows = cur.fetchall()
+
+    for row in rows:
+        print("User:", row[0])
+
+    cur.close()
+    conn.close()
+
+except Exception as e:
+    print("Error:", e)

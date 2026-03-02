@@ -38,3 +38,19 @@ create table file(
     file_content TEXT
 );
 
+CREATE TABLE pushes(
+    push_id SERIAL PRIMARY KEY,
+    fileno INTEGER NOT NULL,
+    file_content TEXT NOT NULL,
+    message TEXT,
+    user_login TEXT,
+    pushed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (fileno)
+    REFERENCES file(fileno)
+    ON DELETE CASCADE,
+
+    FOREIGN KEY (user_login)
+    REFERENCES users(login)
+    ON DELETE SET NULL
+);

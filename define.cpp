@@ -16,9 +16,9 @@ public:
 };
 
 int main(){
-    system("python load.py");
+    system("g++ run.cpp -o run && .\\run");
     user *u;
-    string base="C:/Users/usaid/OneDrive/Desktop/SOURCE/hentai";
+    string base="C:/testing";
     ifstream inputFile("structure.txt");
     if (!inputFile.is_open()) {
         std::cerr << "Error opening file: structure.txt" << std::endl;

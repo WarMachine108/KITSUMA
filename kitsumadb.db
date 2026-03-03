@@ -10,7 +10,7 @@ CREATE TABLE users (
 CREATE TABLE personalized_files (
     file_id SERIAL PRIMARY KEY,
     user_login VARCHAR(100) NOT NULL,
-    file_content TEXT NOT NULL,
+    structure TEXT NOT NULL,
     
     CONSTRAINT fk_user
         FOREIGN KEY (user_login)

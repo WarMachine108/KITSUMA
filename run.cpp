@@ -36,7 +36,6 @@ int main(){
         }
         else if (choice == 'l' || choice == 'L') {
             chosen = true;
-            bool exists = false;
             while (true) {
                 string login_id, password;
                 cout << "Enter your LoginID: ";
@@ -46,17 +45,14 @@ int main(){
                 string command = "python load.py L \"" + login_id + "\" \"" + password + "\"";
                 int res = system(command.c_str());
                 if (res == 0) {
-                    exists = true;
                     cout << "\nWelcome to KITSUMA, " << login_id << endl;
                     user = login_id; 
                     break;
                 }
                 else if (res == 1) {
-                    exists = false;
                     cout << "Invalid LoginID or Password. Try again.\n";
                 }
                 else {
-                    exists = false;
                     cout << "Error occurred. Try again.\n";
                 }
             }

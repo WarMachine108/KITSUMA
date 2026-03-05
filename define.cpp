@@ -25,7 +25,7 @@ int main(){
         return 1;
     }
     bool auth=false,emps=false,structure=false,file=false,folder=true;
-    string line,id,final="";
+    string line,id,final="",file_name="";
     bool first=true;
     while(getline(inputFile,line)){
         if(first){
@@ -54,10 +54,13 @@ int main(){
         }
         if(structure){
             for(char i:line){
+                file_name+=i;
+                if(i=='/'){
+                    file_name="";
+                }
                 if(i=='.'){
                     file=true;
                     folder=false;
-                    break;
                 }
             }
             if(folder){
@@ -66,6 +69,8 @@ int main(){
             }
             if(file){
                 final = "type nul > "+ base + "/" + line;
+                system(final.c_str());
+                final= "python load.py GF \"" + line + "\" \"" + base + "\" \"" + file_name + "\"";
                 system(final.c_str());
                 file=false;
                 folder=true;

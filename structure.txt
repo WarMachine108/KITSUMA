@@ -1,0 +1,11 @@
+auth:
+FH
+emps:
+E1
+E2
+E3
+struct:
+f1
+f1/usaid.txt
+f1/f2
+f1/f2/nums.py

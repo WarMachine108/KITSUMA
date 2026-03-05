@@ -7,7 +7,7 @@ def signup(sign_up, new_pass):
             host="localhost",
             database="kitsumadb",
             user="postgres",
-            password="Tanmay10",
+            password="Usaid@10",
             port="5432"
         )
         cursor = conn.cursor()
@@ -28,7 +28,7 @@ def login(login_id, password):
             host="localhost",
             database="kitsumadb",
             user="postgres",
-            password="Tanmay10",
+            password="Usaid@10",
             port="5432"
         )
         cursor = conn.cursor()
@@ -48,7 +48,7 @@ def getdata(login_id):
             host="localhost",
             database="kitsumadb",
             user="postgres",
-            password="Tanmay10",
+            password="Usaid@10",
             port="5432"
         )
         cursor = conn.cursor()
@@ -85,7 +85,32 @@ def putfilecontent(filename, file):
         conn.commit()
         conn.close() 
     except Exception as e: 
+        return 2    
+def getfiledata(file_path,base_path,file_name): 
+    try:
+        conn = psycopg2.connect(
+            host="localhost",
+            database="kitsumadb",
+            user="postgres",
+            password="Usaid@10",
+            port="5432"
+        )
+        cursor = conn.cursor()
+        print(file_name)
+        cursor.execute("SELECT file_content from file where filename = %s; ", (file_name, ))
+        output = cursor.fetchall()
+        location=base_path+'/'+file_path
+        if (output): 
+            with open(location, 'w+') as f: 
+                f.write(output[0][0])
+            conn.close()
+            return 0
+        else:
+            conn.close()
+            return 1
+    except Exception as e:
         return 2
+
 if __name__ == "__main__":
     operation = sys.argv[1]
     if operation == "S" or operation == "L":
@@ -106,6 +131,13 @@ if __name__ == "__main__":
         
         file = sys.argv[3]
         code = putfilecontent(filename, file)
+        
+    elif operation == "GF":
+        file_path=sys.argv[2]
+        base_path=sys.argv[3]
+        file_name=sys.argv[4]
+        code = getfiledata(file_path,base_path,file_name)
+
     else:
         code = 2
 

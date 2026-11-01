@@ -1,2 +1,9 @@
-.vscode/tasks.json
-.vscode/settings.json
+.vscode/
+.env
+.venv/
+__pycache__/
+*.pyc
+build/
+.kitsuma/
+workspaces/
+*.exe

@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <stdexcept>
+#include <filesystem>
 
 using namespace std;
 
@@ -61,108 +63,115 @@ done:
 }
 
 vector<string> readFile(const string& path) {
-    ifstream f(path);
+    ifstream f(path, ios::binary);
+    if (!f) throw runtime_error("Cannot open input: " + path);
     vector<string> lines;
-    if (!f.is_open()) {
-        cerr << RED << "Error: cannot open '" << path << "'" << RESET << "\n";
-        return lines;
-    }
     string line;
-    while (getline(f, line)) lines.push_back(line);
+    char c;
+    while (f.get(c)) {
+        line += c;
+        if (c=='\n') { lines.push_back(line); line.clear(); }
+    }
+    if (f.bad()) throw runtime_error("Cannot read input: " + path);
+    if (!line.empty()) lines.push_back(line);
     return lines;
 }
 
 bool writeFile(const string& path, const vector<string>& lines) {
-    ofstream f(path);
-    if (!f.is_open()) return false;
-    for (auto& l : lines) f << l << "\n";
+    string temporary=path+".tmp";
+    ofstream f(temporary,ios::binary | ios::trunc);
+    if (!f) return false;
+    for (const auto& line : lines) f << line;
+    f.close();
+    if (!f) return false;
+    // The integration always uses a fresh output path in a private directory.
+    // Refuse to overwrite an existing standalone output, preserving old results.
+    if (filesystem::exists(path)) { filesystem::remove(temporary); return false; }
+    error_code ec;
+    filesystem::rename(temporary,path,ec);
+    if (ec) { filesystem::remove(temporary); return false; }
     return true;
 }
 
+// A change replaces a half-open interval of base lines. Keeping replacements
+// together lets delete-versus-edit become a conflict instead of two auto edits.
+struct Change { int start, end; vector<string> lines; };
+enum RegionType { UNCHANGED, ONLY_A, ONLY_B, CONFLICT };
+struct MergeRegion { RegionType type; vector<string> base_lines, a_lines, b_lines; };
 
-struct BranchMap {
-    int                    n;          
-    vector<bool>           deleted;
-    vector<vector<string>> ins_before; 
-    vector<string>         ins_after;  
-};
-
-BranchMap buildBranchMap(const vector<string>& base, const vector<Edit>& diff) {
-    BranchMap bm;
-    bm.n = (int)base.size();
-    bm.deleted.assign(bm.n, false);
-    bm.ins_before.resize(bm.n);
-    vector<string> pending;
-    int bi = 0;
-    for (auto& e : diff) {
-        if (e.op == KEEP) {
-            bm.ins_before[bi] = pending; pending.clear(); bi++;
-        } else if (e.op == DEL) {
-            bm.ins_before[bi] = pending; pending.clear();
-            bm.deleted[bi] = true; bi++;
+vector<Change> changesFromDiff(const vector<Edit>& diff) {
+    vector<Change> result;
+    int at = 0;
+    bool active = false;
+    Change current{0,0,{}};
+    for (const auto& edit : diff) {
+        if (edit.op == KEEP) {
+            if (active) { result.push_back(current); active = false; }
+            ++at;
         } else {
-            pending.push_back(e.s);
+            if (!active) { current = {at,at,{}}; active = true; }
+            if (edit.op == DEL) current.end = ++at;
+            else current.lines.push_back(edit.s);
         }
     }
-    bm.ins_after = pending;
-    return bm;
+    if (active) result.push_back(current);
+    return result;
 }
 
-enum RegionType { UNCHANGED, ONLY_A, ONLY_B, CONFLICT };
-
-struct MergeRegion {
-    RegionType     type;
-    vector<string> base_lines, a_lines, b_lines;
-};
+vector<string> applyRegion(const vector<string>& base, int start, int end,
+                           const vector<Change>& changes, size_t first, size_t last) {
+    vector<string> result;
+    int at = start;
+    for (size_t i = first; i < last; ++i) {
+        const auto& change = changes[i];
+        result.insert(result.end(),base.begin()+at,base.begin()+change.start);
+        result.insert(result.end(),change.lines.begin(),change.lines.end());
+        at = change.end;
+    }
+    result.insert(result.end(),base.begin()+at,base.begin()+end);
+    return result;
+}
 
 vector<MergeRegion> threeWayMerge(const vector<string>& base,
-                                   const vector<string>& A,
-                                   const vector<string>& B) {
-    auto bm_a = buildBranchMap(base, myersDiff(base, A));
-    auto bm_b = buildBranchMap(base, myersDiff(base, B));
-
-    vector<MergeRegion> out;
-
-    auto emit = [&](RegionType t,
-                    const vector<string>& bl,
-                    const vector<string>& al,
-                    const vector<string>& bbl) {
-        if (!out.empty() && out.back().type == t) {
-            auto& r = out.back();
-            for (auto& l : bl)  r.base_lines.push_back(l);
-            for (auto& l : al)  r.a_lines   .push_back(l);
-            for (auto& l : bbl) r.b_lines   .push_back(l);
-        } else {
-            out.push_back({t, bl, al, bbl});
+                                  const vector<string>& A, const vector<string>& B) {
+    auto ca = changesFromDiff(myersDiff(base,A));
+    auto cb = changesFromDiff(myersDiff(base,B));
+    vector<MergeRegion> result;
+    size_t ia=0, ib=0;
+    int at=0;
+    while (ia<ca.size() || ib<cb.size()) {
+        int start = ia==ca.size() ? cb[ib].start : ib==cb.size() ? ca[ia].start : min(ca[ia].start,cb[ib].start);
+        if (at<start) {
+            vector<string> same(base.begin()+at,base.begin()+start);
+            result.push_back({UNCHANGED,same,same,same});
         }
-    };
-
-    for (int i = 0; i < bm_a.n; i++) {
-        const auto& ia = bm_a.ins_before[i];
-        const auto& ib = bm_b.ins_before[i];
-        if (!ia.empty() || !ib.empty()) {
-            if      (!ia.empty() && !ib.empty())
-                emit(ia == ib ? UNCHANGED : CONFLICT, {}, ia, ib);
-            else if (!ia.empty()) emit(ONLY_A, {}, ia, {});
-            else                  emit(ONLY_B, {}, {}, ib);
+        int end=start;
+        size_t fa=ia, fb=ib;
+        // Include insertions at a replacement boundary conservatively. Adjacent
+        // nonempty replacements remain separate and can merge independently.
+        bool progress=true;
+        while (progress) {
+            progress=false;
+            auto include = [&](const vector<Change>& c, size_t& i) {
+                while (i<c.size() && (c[i].start==start || c[i].start<end ||
+                       (c[i].start==end && c[i].start==c[i].end))) {
+                    end=max(end,c[i].end); ++i; progress=true;
+                }
+            };
+            include(ca,ia); include(cb,ib);
         }
-
-        bool da = bm_a.deleted[i], db = bm_b.deleted[i];
-        if      (!da && !db) emit(UNCHANGED, {base[i]}, {base[i]}, {base[i]});
-        else if ( da &&  db) /* both deleted: auto, emit nothing */ ;
-        else if ( da)        emit(ONLY_A, {base[i]}, {}, {base[i]});
-        else                 emit(ONLY_B, {base[i]}, {base[i]}, {});
+        vector<string> original(base.begin()+start,base.begin()+end);
+        auto av=applyRegion(base,start,end,ca,fa,ia);
+        auto bv=applyRegion(base,start,end,cb,fb,ib);
+        RegionType type = av==bv ? UNCHANGED : av==original ? ONLY_B : bv==original ? ONLY_A : CONFLICT;
+        result.push_back({type,original,av,bv});
+        at=end;
     }
-
-    const auto& ta = bm_a.ins_after, &tb = bm_b.ins_after;
-    if (!ta.empty() || !tb.empty()) {
-        if      (!ta.empty() && !tb.empty())
-            emit(ta == tb ? UNCHANGED : CONFLICT, {}, ta, tb);
-        else if (!ta.empty()) emit(ONLY_A, {}, ta, {});
-        else                  emit(ONLY_B, {}, {}, tb);
+    if (at<(int)base.size()) {
+        vector<string> same(base.begin()+at,base.end());
+        result.push_back({UNCHANGED,same,same,same});
     }
-
-    return out;
+    return result;
 }
 
 void rule(const string& s, int n = 66) {
@@ -174,7 +183,7 @@ string prompt(const string& msg) {
     string in;
     while (true) {
         cout << BOLD << YELLOW << "  > " << msg << " " << RESET;
-        getline(cin, in);
+        if (!getline(cin, in)) throw runtime_error("Input closed; merge cancelled.");
         if (!in.empty()) return in;
     }
 }
@@ -210,10 +219,10 @@ vector<string> resolveConflict(const vector<string>& a,
         if (c == "ab") { auto r=a; r.insert(r.end(),b.begin(),b.end()); return r; }
         if (c == "ba") { auto r=b; r.insert(r.end(),a.begin(),a.end()); return r; }
         if (c == "e") {
-            cout << "  Type lines, empty line to finish:\n";
+            cout << "  Type lines, a single . to finish (blank lines are allowed):\n";
             vector<string> custom;
             string l;
-            while (true) { cout << "  | "; getline(cin,l); if(l.empty()) break; custom.push_back(l); }
+            while (true) { cout << "  | "; if (!getline(cin,l)) throw runtime_error("Input closed; merge cancelled."); if(l==".") break; custom.push_back(l+"\n"); }
             return custom;
         }
         cout << RED << "  Unknown. Use: a / b / ab / ba / e / s\n" << RESET;
@@ -245,26 +254,27 @@ vector<string> showAutoHunk(const MergeRegion& r, int n) {
     }
 
     cout << "\n  [y] accept   [n] override manually\n\n";
-    string c = prompt("Accept auto-merge?");
-    if (c == "n") return resolveConflict(r.a_lines, r.b_lines, n);
-    return changed;
+    while (true) {
+        string c = prompt("Accept auto-merge?");
+        if (c == "n") return resolveConflict(r.a_lines,r.b_lines,n);
+        if (c == "y") return changed;
+        cout << "Use y or n.\n";
+    }
 }
 
+#ifndef KITSUMA_NO_MAIN
 int main(int argc, char* argv[]) {
-    string base_path = "not_merged/main.txt";
-    string a_path    = "not_merged/file1.txt";
-    string b_path    = "not_merged/file2.txt";
-    string out_path  = "merged.txt";
-
-    if (argc == 5) {
-        base_path = argv[1]; a_path = argv[2];
-        b_path    = argv[3]; out_path = argv[4];
-    }
+  try {
+    if (argc != 5) throw runtime_error("Usage: update <base> <submitted> <current> <output>");
+    string base_path = argv[1];
+    string a_path    = argv[2];
+    string b_path    = argv[3];
+    string out_path  = argv[4];
 
     auto base = readFile(base_path);
     auto A    = readFile(a_path);
     auto B    = readFile(b_path);
-    if (base.empty() && A.empty() && B.empty()) return 1;
+
 
     auto regions = threeWayMerge(base, A, B);
 
@@ -310,9 +320,10 @@ int main(int argc, char* argv[]) {
     rule("=");
     if (writeFile(out_path, output))
         cout << BOLD << GREEN  << "  Merge complete -> " << out_path << RESET << "\n";
-    else
-        cout << BOLD << RED    << "  Failed to write " << out_path  << RESET << "\n";
+    else throw runtime_error("Cannot write output (use a new output path): " + out_path);
     rule("=");
     cout << "\n";
     return 0;
+  } catch (const exception& error) { cerr << "Error: " << error.what() << "\n"; return 1; }
 }
+#endif

@@ -1,5 +1,0 @@
-import sys
-x = 10
-print(x)
-y = 30
-print(y)

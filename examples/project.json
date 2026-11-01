@@ -1,0 +1,13 @@
+{
+  "name": "MusicPlayer",
+  "admin": "admin",
+  "employees": ["alice", "bob", "head"],
+  "folders": [
+    {"path": "src", "hierarchy": ["alice", "bob", "head"], "head": "head"}
+  ],
+  "files": {
+    "README.txt": "MusicPlayer - a KITSUMA demonstration.\n",
+    "src/player.txt": "volume = 10\nplaying = false\n",
+    "src/notes.txt": "Player implementation notes.\n"
+  }
+}
